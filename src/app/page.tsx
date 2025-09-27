@@ -131,6 +131,7 @@ export default function Home() {
             <TaskListSection
               selectedTaskList={selectedTaskList}
               onTaskListChange={setSelectedTaskList}
+              user={user}
             />
           )}
 
@@ -141,6 +142,7 @@ export default function Home() {
               taskListId={selectedTaskList}
               syncStatus={syncStatus}
               onSyncStatusChange={setSyncStatus}
+              user={user}
             />
           )}
         </div>

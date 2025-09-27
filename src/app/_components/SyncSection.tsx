@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { api } from "~/trpc/react";
 
 interface Assignment {
   id: string;
@@ -8,6 +9,13 @@ interface Assignment {
   dueDate: string;
   course: string;
   description?: string;
+  url?: string;
+}
+
+interface User {
+  id: string;
+  name: string | null;
+  email: string;
 }
 
 interface SyncSectionProps {
@@ -17,6 +25,7 @@ interface SyncSectionProps {
   onSyncStatusChange: (
     status: "idle" | "syncing" | "success" | "error",
   ) => void;
+  user: User | null;
 }
 
 export function SyncSection({
@@ -24,6 +33,7 @@ export function SyncSection({
   taskListId,
   syncStatus,
   onSyncStatusChange,
+  user,
 }: SyncSectionProps) {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [selectedAssignments, setSelectedAssignments] = useState<string[]>([]);
@@ -39,82 +49,131 @@ export function SyncSection({
     errors: string[];
   } | null>(null);
 
+  const utils = api.useUtils();
+  const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
+
   const handlePreviewAssignments = async () => {
+    if (!user?.id) {
+      console.error("User not authenticated");
+      onSyncStatusChange("error");
+      return;
+    }
+
+    setIsLoadingAssignments(true);
     onSyncStatusChange("syncing");
 
     try {
-      // TODO: Replace with actual Canvas API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const data = await utils.canvas.getAssignments.fetch({
+        url: canvasUrl,
+        userId: user.id,
+      });
 
-      // Mock assignments data
-      const mockAssignments: Assignment[] = [
-        {
-          id: "1",
-          title: "Math Homework Chapter 5",
-          dueDate: "2024-01-20T23:59:00",
-          course: "Mathematics 101",
-          description: "Complete exercises 1-20 from chapter 5",
-        },
-        {
-          id: "2",
-          title: "History Essay",
-          dueDate: "2024-01-22T11:59:00",
-          course: "World History",
-          description: "Write a 1000-word essay on the Industrial Revolution",
-        },
-        {
-          id: "3",
-          title: "Science Lab Report",
-          dueDate: "2024-01-25T17:00:00",
-          course: "Chemistry 101",
-          description: "Submit lab report for experiment conducted on Jan 15",
-        },
-        {
-          id: "4",
-          title: "Programming Project",
-          dueDate: "2024-01-28T23:59:00",
-          course: "Computer Science",
-          description: "Build a simple web application using React",
-        },
-      ];
+      if (data.success && data.assignments) {
+        const formattedAssignments: Assignment[] = data.assignments.map(
+          (assignment) => ({
+            id: assignment.id,
+            title: assignment.title,
+            dueDate: assignment.dueDate || new Date().toISOString(),
+            course: assignment.course || "Unknown Course",
+            description: assignment.description || "",
+            url: assignment.url,
+          }),
+        );
 
-      setAssignments(mockAssignments);
-      setSelectedAssignments(mockAssignments.map((a) => a.id));
-      onSyncStatusChange("idle");
+        setAssignments(formattedAssignments);
+        setSelectedAssignments(formattedAssignments.map((a) => a.id));
+        onSyncStatusChange("idle");
+      } else {
+        throw new Error("Failed to fetch assignments");
+      }
     } catch (error) {
       console.error("Failed to fetch assignments:", error);
       onSyncStatusChange("error");
+    } finally {
+      setIsLoadingAssignments(false);
     }
   };
 
+  const createIntegrationMutation = api.canvas.createIntegration.useMutation();
+  const syncUserMutation = api.sync.syncUser.useMutation({
+    onSuccess: (data) => {
+      if (data.success && data.results) {
+        // Calculate totals from all results
+        const totals = data.results.reduce(
+          (acc, result) => ({
+            successful:
+              acc.successful +
+              (result.tasksCreated || 0) +
+              (result.tasksUpdated || 0),
+            failed: acc.failed + (result.errors?.length || 0),
+            errors: [...acc.errors, ...(result.errors || [])],
+          }),
+          { successful: 0, failed: 0, errors: [] as string[] },
+        );
+
+        setSyncResults(totals);
+        setLastSyncTime(new Date());
+        onSyncStatusChange("success");
+      } else {
+        throw new Error("Sync failed");
+      }
+    },
+    onError: (error) => {
+      console.error("Sync failed:", error);
+      setSyncResults({
+        successful: 0,
+        failed: selectedAssignments.length,
+        errors: [error.message || "Failed to sync assignments to Google Tasks"],
+      });
+      onSyncStatusChange("error");
+    },
+  });
+
   const handleSync = async () => {
-    if (selectedAssignments.length === 0) return;
+    if (selectedAssignments.length === 0 || !user?.id) return;
 
     onSyncStatusChange("syncing");
     setSyncResults(null);
 
     try {
-      // TODO: Replace with actual sync implementation
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      // Mock sync results
-      const successful = selectedAssignments.length;
-      const failed = 0;
-
-      setSyncResults({
-        successful,
-        failed,
-        errors: [],
+      // First, ensure we have an integration created
+      // We need to get the task list name first
+      const taskListsData = await utils.tasks.getTaskLists.fetch({
+        userId: user.id,
       });
+      const selectedTaskList = taskListsData?.taskLists?.find(
+        (tl) => tl.id === taskListId,
+      );
 
-      setLastSyncTime(new Date());
-      onSyncStatusChange("success");
+      if (!selectedTaskList) {
+        throw new Error("Selected task list not found");
+      }
+
+      // Create integration if it doesn't exist (this will handle duplicates gracefully)
+      try {
+        await createIntegrationMutation.mutateAsync({
+          userId: user.id,
+          canvasUrl: canvasUrl,
+          taskListId: taskListId,
+          taskListName: selectedTaskList.title,
+        });
+      } catch (integrationError) {
+        // Integration might already exist, continue with sync
+        console.log("Integration may already exist, continuing with sync");
+      }
+
+      // Now sync the user's integrations
+      syncUserMutation.mutate({ userId: user.id });
     } catch (error) {
       console.error("Sync failed:", error);
       setSyncResults({
         successful: 0,
         failed: selectedAssignments.length,
-        errors: ["Failed to sync assignments to Google Tasks"],
+        errors: [
+          error instanceof Error
+            ? error.message
+            : "Failed to sync assignments to Google Tasks",
+        ],
       });
       onSyncStatusChange("error");
     }
@@ -140,6 +199,36 @@ export function SyncSection({
   const isOverdue = (dateString: string) => {
     return new Date(dateString) < new Date();
   };
+
+  if (!user) {
+    return (
+      <div className="rounded-lg bg-white p-6 shadow-md">
+        <div className="mb-4 flex items-center">
+          <div className="mr-3 flex h-10 w-10 items-center justify-center rounded-full bg-purple-100">
+            <svg
+              className="h-5 w-5 text-purple-600"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">
+            Sync Assignments
+          </h3>
+        </div>
+        <p className="text-gray-600">
+          Please authenticate with Google to sync assignments.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-lg bg-white p-6 shadow-md">
@@ -217,10 +306,15 @@ export function SyncSection({
       <div className="mb-6 flex space-x-3">
         <button
           onClick={handlePreviewAssignments}
-          disabled={syncStatus === "syncing"}
+          disabled={
+            syncStatus === "syncing" ||
+            isLoadingAssignments ||
+            !user
+          }
           className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {syncStatus === "syncing" && assignments.length === 0 ? (
+          {(syncStatus === "syncing" || isLoadingAssignments) &&
+          assignments.length === 0 ? (
             <>
               <svg
                 className="mr-2 -ml-1 inline h-4 w-4 animate-spin text-white"
@@ -253,11 +347,16 @@ export function SyncSection({
           <button
             onClick={handleSync}
             disabled={
-              syncStatus === "syncing" || selectedAssignments.length === 0
+              syncStatus === "syncing" ||
+              selectedAssignments.length === 0 ||
+              syncUserMutation.isPending ||
+              createIntegrationMutation.isPending ||
+              !user
             }
             className="flex-1 rounded-md bg-green-600 px-4 py-2 text-white hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {syncStatus === "syncing" && assignments.length > 0 ? (
+            {(syncStatus === "syncing" || syncUserMutation.isPending) &&
+            assignments.length > 0 ? (
               <>
                 <svg
                   className="mr-2 -ml-1 inline h-4 w-4 animate-spin text-white"

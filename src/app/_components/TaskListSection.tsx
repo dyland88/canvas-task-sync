@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { api } from "~/trpc/react";
 
 interface TaskList {
   id: string;
@@ -8,79 +9,99 @@ interface TaskList {
   updated: string;
 }
 
+interface User {
+  id: string;
+  name: string | null;
+  email: string;
+}
+
 interface TaskListSectionProps {
   selectedTaskList: string;
   onTaskListChange: (taskListId: string) => void;
+  user: User | null;
 }
 
 export function TaskListSection({
   selectedTaskList,
   onTaskListChange,
+  user,
 }: TaskListSectionProps) {
-  const [taskLists, setTaskLists] = useState<TaskList[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [newTaskListName, setNewTaskListName] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
 
-  // Mock task lists - replace with actual Google Tasks API call
-  useEffect(() => {
-    const fetchTaskLists = async () => {
-      setIsLoading(true);
+  // Fetch task lists using TRPC
+  const {
+    data: taskListsData,
+    isLoading,
+    error,
+    refetch,
+  } = api.tasks.getTaskLists.useQuery(
+    { userId: user?.id ?? "" },
+    {
+      enabled: !!user?.id,
+      retry: false,
+    },
+  );
 
-      // TODO: Replace with actual Google Tasks API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+  const taskLists = taskListsData?.success ? taskListsData.taskLists : [];
 
-      const mockTaskLists: TaskList[] = [
-        {
-          id: "default",
-          title: "My Tasks",
-          updated: "2024-01-15T10:00:00.000Z",
-        },
-        {
-          id: "work",
-          title: "Work Tasks",
-          updated: "2024-01-14T15:30:00.000Z",
-        },
-        {
-          id: "personal",
-          title: "Personal Tasks",
-          updated: "2024-01-13T09:15:00.000Z",
-        },
-      ];
-
-      setTaskLists(mockTaskLists);
-      setIsLoading(false);
-    };
-
-    fetchTaskLists();
-  }, []);
+  const createTaskListMutation = api.tasks.createTaskList.useMutation({
+    onSuccess: (data) => {
+      if (data.success && data.taskList) {
+        onTaskListChange(data.taskList.id);
+        setNewTaskListName("");
+        setShowCreateForm(false);
+        refetch(); // Refresh the task lists
+      }
+    },
+    onError: (error) => {
+      console.error("Failed to create task list:", error);
+    },
+    onSettled: () => {
+      setIsCreating(false);
+    },
+  });
 
   const handleCreateTaskList = async () => {
-    if (!newTaskListName.trim()) return;
+    if (!newTaskListName.trim() || !user?.id) return;
 
     setIsCreating(true);
-
-    try {
-      // TODO: Replace with actual Google Tasks API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const newTaskList: TaskList = {
-        id: `custom-${Date.now()}`,
-        title: newTaskListName,
-        updated: new Date().toISOString(),
-      };
-
-      setTaskLists((prev) => [...prev, newTaskList]);
-      onTaskListChange(newTaskList.id);
-      setNewTaskListName("");
-      setShowCreateForm(false);
-    } catch (error) {
-      console.error("Failed to create task list:", error);
-    } finally {
-      setIsCreating(false);
-    }
+    createTaskListMutation.mutate({
+      userId: user.id,
+      title: newTaskListName.trim(),
+    });
   };
+
+  if (!user) {
+    return (
+      <div className="rounded-lg bg-white p-6 shadow-md">
+        <div className="mb-4 flex items-center">
+          <div className="mr-3 flex h-10 w-10 items-center justify-center rounded-full bg-green-100">
+            <svg
+              className="h-5 w-5 text-green-600"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+              />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">
+            Google Task Lists
+          </h3>
+        </div>
+        <p className="text-gray-600">
+          Please authenticate with Google to view your task lists.
+        </p>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -113,6 +134,44 @@ export function TaskListSection({
             <div className="h-10 rounded bg-gray-200"></div>
             <div className="h-10 rounded bg-gray-200"></div>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg bg-white p-6 shadow-md">
+        <div className="mb-4 flex items-center">
+          <div className="mr-3 flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
+            <svg
+              className="h-5 w-5 text-red-600"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">
+            Google Task Lists
+          </h3>
+        </div>
+        <div className="rounded-md bg-red-50 p-4">
+          <p className="text-sm text-red-700">
+            Failed to load task lists: {error.message}
+          </p>
+          <button
+            onClick={() => refetch()}
+            className="mt-2 text-sm font-medium text-red-600 hover:text-red-800"
+          >
+            Try Again
+          </button>
         </div>
       </div>
     );
