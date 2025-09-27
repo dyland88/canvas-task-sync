@@ -1,53 +1,83 @@
-import Link from "next/link";
+"use client";
 
-import { LatestPost } from "~/app/_components/post";
-import { api, HydrateClient } from "~/trpc/server";
+import { useState } from "react";
+import { AuthSection } from "./_components/AuthSection";
+import { CanvasSection } from "./_components/CanvasSection";
+import { TaskListSection } from "./_components/TaskListSection";
+import { SyncSection } from "./_components/SyncSection";
+import { Footer } from "./_components/Footer";
 
-export default async function Home() {
-  const hello = await api.post.hello({ text: "from tRPC" });
+interface User {
+  name: string;
+  email: string;
+}
 
-  void api.post.getLatest.prefetch();
+export default function Home() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [canvasUrl, setCanvasUrl] = useState("");
+  const [selectedTaskList, setSelectedTaskList] = useState("");
+  const [syncStatus, setSyncStatus] = useState<
+    "idle" | "syncing" | "success" | "error"
+  >("idle");
 
   return (
-    <HydrateClient>
-      <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#2e026d] to-[#15162c] text-white">
-        <div className="container flex flex-col items-center justify-center gap-12 px-4 py-16">
-          <h1 className="text-5xl font-extrabold tracking-tight sm:text-[5rem]">
-            Create <span className="text-[hsl(280,100%,70%)]">T3</span> App
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="mb-8 text-center">
+          <h1 className="mb-2 text-4xl font-bold text-gray-900">
+            Canvas Task Sync
           </h1>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-8">
-            <Link
-              className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 hover:bg-white/20"
-              href="https://create.t3.gg/en/usage/first-steps"
-              target="_blank"
-            >
-              <h3 className="text-2xl font-bold">First Steps →</h3>
-              <div className="text-lg">
-                Just the basics - Everything you need to know to set up your
-                database and authentication.
-              </div>
-            </Link>
-            <Link
-              className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 hover:bg-white/20"
-              href="https://create.t3.gg/en/introduction"
-              target="_blank"
-            >
-              <h3 className="text-2xl font-bold">Documentation →</h3>
-              <div className="text-lg">
-                Learn more about Create T3 App, the libraries it uses, and how
-                to deploy it.
-              </div>
-            </Link>
-          </div>
-          <div className="flex flex-col items-center gap-2">
-            <p className="text-2xl text-white">
-              {hello ? hello.greeting : "Loading tRPC query..."}
-            </p>
-          </div>
-
-          <LatestPost />
+          <p className="text-lg text-gray-600">
+            Sync your Canvas assignments to Google Tasks effortlessly
+          </p>
         </div>
-      </main>
-    </HydrateClient>
+
+        {/* Main Content */}
+        <div className="mx-auto max-w-4xl space-y-8">
+          {/* Authentication Section */}
+          <AuthSection
+            isAuthenticated={isAuthenticated}
+            user={user}
+            onAuthStateChange={(
+              authenticated: boolean,
+              userData: User | null,
+            ) => {
+              setIsAuthenticated(authenticated);
+              setUser(userData);
+            }}
+          />
+
+          {/* Canvas Configuration Section */}
+          {isAuthenticated && (
+            <CanvasSection
+              canvasUrl={canvasUrl}
+              onCanvasUrlChange={setCanvasUrl}
+            />
+          )}
+
+          {/* Task List Selection Section */}
+          {isAuthenticated && canvasUrl && (
+            <TaskListSection
+              selectedTaskList={selectedTaskList}
+              onTaskListChange={setSelectedTaskList}
+            />
+          )}
+
+          {/* Sync Section */}
+          {isAuthenticated && canvasUrl && selectedTaskList && (
+            <SyncSection
+              canvasUrl={canvasUrl}
+              taskListId={selectedTaskList}
+              syncStatus={syncStatus}
+              onSyncStatusChange={setSyncStatus}
+            />
+          )}
+        </div>
+
+        <Footer />
+      </div>
+    </main>
   );
 }

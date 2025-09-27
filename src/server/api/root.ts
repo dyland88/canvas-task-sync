@@ -1,4 +1,8 @@
 import { postRouter } from "~/server/api/routers/post";
+import { authRouter } from "~/server/api/routers/auth";
+import { canvasRouter } from "~/server/api/routers/canvas";
+import { tasksRouter } from "~/server/api/routers/tasks";
+import { syncRouter } from "~/server/api/routers/sync";
 import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
 
 /**
@@ -8,6 +12,10 @@ import { createCallerFactory, createTRPCRouter } from "~/server/api/trpc";
  */
 export const appRouter = createTRPCRouter({
   post: postRouter,
+  auth: authRouter,
+  canvas: canvasRouter,
+  tasks: tasksRouter,
+  sync: syncRouter,
 });
 
 // export type definition of API
