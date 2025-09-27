@@ -3,7 +3,8 @@
 import { useState } from "react";
 
 interface User {
-  name: string;
+  id: string;
+  name: string | null;
   email: string;
 }
 
@@ -23,22 +24,11 @@ export function AuthSection({
   const handleGoogleLogin = async () => {
     setIsLoading(true);
 
-    // TODO: Implement actual Google OAuth flow
-    // This is just a mock implementation for the frontend
     try {
-      // Simulate API call delay
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Mock successful authentication
-      const mockUser: User = {
-        name: "John Doe",
-        email: "john.doe@example.com",
-      };
-
-      onAuthStateChange(true, mockUser);
+      // Redirect to Google OAuth
+      window.location.href = "/api/auth/google";
     } catch (error) {
       console.error("Authentication failed:", error);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -54,12 +44,12 @@ export function AuthSection({
           <div className="flex items-center space-x-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-500">
               <span className="text-lg font-semibold text-white">
-                {user.name.charAt(0).toUpperCase()}
+                {(user.name || user.email).charAt(0).toUpperCase()}
               </span>
             </div>
             <div>
               <h3 className="text-lg font-semibold text-gray-900">
-                {user.name}
+                {user.name || user.email}
               </h3>
               <p className="text-sm text-gray-600">{user.email}</p>
             </div>

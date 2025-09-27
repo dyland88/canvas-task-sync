@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AuthSection } from "./_components/AuthSection";
 import { CanvasSection } from "./_components/CanvasSection";
 import { TaskListSection } from "./_components/TaskListSection";
@@ -8,7 +8,8 @@ import { SyncSection } from "./_components/SyncSection";
 import { Footer } from "./_components/Footer";
 
 interface User {
-  name: string;
+  id: string;
+  name: string | null;
   email: string;
 }
 
@@ -20,6 +21,65 @@ export default function Home() {
   const [syncStatus, setSyncStatus] = useState<
     "idle" | "syncing" | "success" | "error"
   >("idle");
+
+  // Handle OAuth callback and restore user session
+  useEffect(() => {
+    const handleAuthCallback = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+
+      // Handle OAuth success
+      if (urlParams.get("auth") === "success") {
+        const userId = urlParams.get("userId");
+        const email = urlParams.get("email");
+        const name = urlParams.get("name");
+
+        if (userId && email) {
+          const userData: User = {
+            id: userId,
+            email,
+            name: name || null,
+          };
+
+          setUser(userData);
+          setIsAuthenticated(true);
+
+          // Store user in localStorage for persistence
+          localStorage.setItem("canvas-sync-user", JSON.stringify(userData));
+
+          // Clean up URL
+          window.history.replaceState({}, "", window.location.pathname);
+        }
+      }
+
+      // Handle OAuth errors
+      else if (urlParams.get("error")) {
+        console.error("OAuth error:", urlParams.get("error"));
+        alert(
+          `Authentication failed: ${urlParams.get("message") || urlParams.get("error")}`,
+        );
+
+        // Clean up URL
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+
+      // Restore user session from localStorage
+      else {
+        const savedUser = localStorage.getItem("canvas-sync-user");
+        if (savedUser) {
+          try {
+            const userData = JSON.parse(savedUser) as User;
+            setUser(userData);
+            setIsAuthenticated(true);
+          } catch (error) {
+            console.error("Failed to parse saved user data:", error);
+            localStorage.removeItem("canvas-sync-user");
+          }
+        }
+      }
+    };
+
+    handleAuthCallback();
+  }, []);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
@@ -46,6 +106,15 @@ export default function Home() {
             ) => {
               setIsAuthenticated(authenticated);
               setUser(userData);
+
+              if (authenticated && userData) {
+                localStorage.setItem(
+                  "canvas-sync-user",
+                  JSON.stringify(userData),
+                );
+              } else {
+                localStorage.removeItem("canvas-sync-user");
+              }
             }}
           />
 
